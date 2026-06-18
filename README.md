@@ -14,6 +14,46 @@ This repository implements a **decentralized, local persistence layer** utilizin
 
 **Empirically validated on Project Zorthex™** — demonstrating near-zero context initialization latency and significant reduction in token consumption overhead.
 
+---
+
+## Quick Setup (3 steps)
+
+**Step 1 — Clone the repository**
+```bash
+git clone https://github.com/zorthex2026/mcp-longterm-memory-engine.git
+cd mcp-longterm-memory-engine
+```
+
+**Step 2 — Install the only dependency**
+```bash
+pip install fastmcp
+```
+
+> `fastmcp` is the only external library required. Everything else (SQLite, json, datetime) is included in Python's standard library.
+
+**Step 3 — Start the MCP server**
+```bash
+python src/mcp_memory_server.py
+```
+
+The server is now running and ready to connect to your LLM agent.
+
+---
+
+## What is SQLite?
+
+SQLite is a lightweight database that lives as a **single file** on your computer (`memory.db`). It requires no installation, no server, no password. Python includes it by default.
+
+When you run the engine for the first time, it automatically creates `memory.db` in your working directory. You can copy, move, or back it up like any regular file.
+
+---
+
+## What is MCP?
+
+The **Model Context Protocol (MCP)** is an open standard that allows LLM agents (Claude, GPT, etc.) to call external tools and retrieve structured data. This engine exposes the Knowledge Graph as a set of MCP tools that any compatible LLM can call directly.
+
+---
+
 ## Key Features
 
 - **Local-first**: All data stored in a local SQLite database — nothing leaves your infrastructure
@@ -22,6 +62,8 @@ This repository implements a **decentralized, local persistence layer** utilizin
 - **Cross-session persistence**: Memory survives session boundaries deterministically
 - **Zero cloud dependency**: No external APIs required for memory operations
 - **MIT licensed**: Free to use, modify, and distribute
+
+---
 
 ## Why This Matters
 
@@ -36,6 +78,8 @@ Standard LLM deployments suffer from:
 
 This engine solves all four by maintaining a persistent, structured knowledge graph that the LLM can query instead of re-reading entire codebases or conversation histories.
 
+---
+
 ## Architecture
 
 ```
@@ -46,79 +90,96 @@ This engine solves all four by maintaining a persistent, structured knowledge gr
                    │ MCP Protocol
 ┌──────────────────▼──────────────────────────────┐
 │              MCP Memory Server                   │
-│         (mcp_memory_server.py)                   │
+│         (src/mcp_memory_server.py)               │
 └──────────────────┬──────────────────────────────┘
                    │ SQLite queries
 ┌──────────────────▼──────────────────────────────┐
 │           Local Knowledge Graph                  │
-│              (SQLite + JSON)                     │
+│              (memory.db — single file)           │
 │                                                  │
 │  Entities ──── Relations ──── Observations      │
 └─────────────────────────────────────────────────┘
 ```
 
-## Installation
+---
 
-```bash
-git clone https://github.com/zorthex2026/mcp-longterm-memory-engine.git
-cd mcp-longterm-memory-engine
-pip install -r requirements.txt
-```
-
-## Quick Start
+## Quick Start (Python)
 
 ```python
 from src.memory_engine import MemoryEngine
 
-# Initialize the engine
+# Initialize — creates memory.db automatically
 engine = MemoryEngine(db_path="./memory.db")
 
-# Create entities
-engine.create_entity("project_zorthex", "project", [
-    "Dataset v2.0 with 70 verified cases",
-    "Scanner accuracy: 90% on 10-case test set",
-    "DOI: 10.5281/zenodo.20589503"
+# Store context
+engine.create_entity("my_project", "project", [
+    "This project does X",
+    "Key decision: we chose approach Y because Z",
+    "Current status: phase 2 complete"
 ])
 
-# Create relations
-engine.create_relation("project_zorthex", "uses", "aba_opinion_512")
+# Link entities
+engine.create_relation("my_project", "uses", "methodology_A")
 
-# Query context
-context = engine.search("scanner calibration")
-print(context)
+# Retrieve context in a future session
+results = engine.search_nodes("phase 2")
+print(results)
+# → [{"name": "my_project", "observations": ["Current status: phase 2 complete", ...]}]
 ```
 
-## MCP Integration
+---
 
-Add to your MCP configuration:
+## MCP Integration (Claude Desktop)
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "longterm-memory": {
       "command": "python",
-      "args": ["path/to/mcp_memory_server.py"],
+      "args": ["/full/path/to/src/mcp_memory_server.py"],
       "env": {
-        "MEMORY_DB_PATH": "./project_memory.db"
+        "MEMORY_DB_PATH": "/full/path/to/memory.db"
       }
     }
   }
 }
 ```
 
-## API Reference
+Restart Claude Desktop. The memory tools will appear automatically.
 
-### Core Operations
+---
 
-| Method | Description |
-|--------|-------------|
-| `create_entity(name, type, observations)` | Add a new entity to the graph |
-| `create_relation(from, relation, to)` | Link two entities |
-| `add_observation(entity, observation)` | Add a fact to an existing entity |
-| `search_nodes(query)` | Semantic search across the graph |
-| `open_nodes(names)` | Retrieve specific entities by name |
-| `read_graph()` | Export the full knowledge graph |
-| `delete_entity(name)` | Remove an entity and its relations |
+## Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `create_entities` | Add one or more entities to the graph |
+| `create_relations` | Link two entities with a named relation |
+| `add_observations` | Add facts to an existing entity |
+| `search_nodes` | Search across all entities and observations |
+| `open_nodes` | Retrieve specific entities by name |
+| `read_graph` | Export the full knowledge graph |
+| `delete_entities` | Remove entities and their relations |
+
+---
+
+## Cross-Session Persistence — Example
+
+```
+# Session 1 (Monday):
+User: "Store our decision to use SHA-256 for document hashing"
+Claude: [calls create_entities] → stored in memory.db
+
+# Session 2 (Friday, fresh start):
+User: "What hashing algorithm did we decide on?"
+Claude: [calls search_nodes("hashing")] → retrieves exact decision from memory.db
+```
+
+No re-injection of hundreds of pages. No context drift. Deterministic retrieval.
+
+---
 
 ## Research Context
 
@@ -132,12 +193,14 @@ The persistent memory problem is structurally related to the "diffusion lag" con
 - Didisheim, Kelly, Pourmohammadi & Tian (2026) — *The Inefficient Pricing of News*
 - Anthropic Economic Index (2025) — diffusion patterns in AI adoption
 
+---
+
 ## Citation
 
 ```bibtex
 @software{santi2026mcp,
   author    = {Santi, Renato},
-  title     = {Localized Knowledge Graph Architectures for Persistent LLM Context Mitigation via Model Context Protocol (MCP)},
+  title     = {MCP Long-Term Memory Engine: A Local Knowledge Graph for Persistent LLM Context via Model Context Protocol},
   year      = {2026},
   doi       = {10.5281/zenodo.20625302},
   url       = {https://github.com/zorthex2026/mcp-longterm-memory-engine},
@@ -145,9 +208,13 @@ The persistent memory problem is structurally related to the "diffusion lag" con
 }
 ```
 
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
+
+---
 
 ## Author
 
